@@ -1,7 +1,7 @@
 #include "wifi.h"
 
-#define WIFI_SSID      "LenZ5"
-#define WIFI_PASS      "sifra12345"
+#define WIFI_SSID      "NET"
+#define WIFI_PASS      "PWD"
 #define MAXIMUM_RETRY  5
 
 static const char *TAG = "WIFI";
@@ -55,9 +55,6 @@ void wifiInitClient(Wifi *pWifi, const char* wifiSSID, const char* wifiPwd)
         .sta = {
             .ssid = WIFI_SSID,
             .password = WIFI_PASS,
-            /* Setting a password implies station will connect to all security modes including WEP/WPA.
-             * However these modes are deprecated and not advisable to be used. Incase your Access point
-             * doesn't support WPA2, these mode can be enabled by commenting below line */
 	     .threshold.authmode = WIFI_AUTH_WPA2_PSK,
 
             .pmf_cfg = {
@@ -72,30 +69,6 @@ void wifiInitClient(Wifi *pWifi, const char* wifiSSID, const char* wifiPwd)
 
     ESP_LOGI(TAG, "wifi_init_sta finished.");
 
-    // /* Waiting until either the connection is established (WIFI_CONNECTED_BIT) or connection failed for the maximum
-    //  * number of re-tries (WIFI_FAIL_BIT). The bits are set by event_handler() (see above) */
-    // EventBits_t bits = xEventGroupWaitBits(pWifi->mWifiEventGroup,
-    //         WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
-    //         pdFALSE,
-    //         pdFALSE,
-    //         portMAX_DELAY);
-
-    // /* xEventGroupWaitBits() returns the bits before the call returned, hence we can test which event actually
-    //  * happened. */
-    // if (bits & WIFI_CONNECTED_BIT) {
-    //     ESP_LOGI(TAG, "connected to ap SSID:%s password:%s",
-    //              EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS);
-    // } else if (bits & WIFI_FAIL_BIT) {
-    //     ESP_LOGI(TAG, "Failed to connect to SSID:%s, password:%s",
-    //              EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS);
-    // } else {
-    //     ESP_LOGE(TAG, "UNEXPECTED EVENT");
-    // }
-
-    // /* The event will not be processed after unregister */
-    // ESP_ERROR_CHECK(esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, instance_got_ip));
-    // ESP_ERROR_CHECK(esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, instance_any_id));
-    // vEventGroupDelete(pWifi->mWifiEventGroup);
 
     pWifi->mxInitialized = true;
 }
