@@ -16,6 +16,12 @@ struct Vec3 {
 };
 typedef struct Vec3 Vec3;
 
+Vec3 zero();
+Vec3 unitX();
+Vec3 unitY();
+Vec3 unitZ();
+Vec3 newVec3(float x, float y, float z);
+
 Vec3 add(const Vec3* a, const Vec3* b);
 Vec3 sub(const Vec3* a, const Vec3* b);
 float dot(const Vec3* a, const Vec3* b);
