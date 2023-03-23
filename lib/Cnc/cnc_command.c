@@ -29,6 +29,15 @@ EndCommandData newEndCommandData() {
     return data;
 }
 
+SetSpeedCommandData newSetSpeedCommandData(float x, float y, float z) {
+    SetSpeedCommandData data = {
+            .mfSpeedX = x,
+            .mfSpeedY = y,
+            .mfSpeedZ = z
+        };
+    return data;
+}
+
 CncCommand newNoneCommand(uint32_t id) {
     NoneCommandData data = newNoneCommandData();
     union CommandData cmdData;
@@ -57,6 +66,24 @@ CncCommand newMoveCommand(uint32_t id, float x, float y, float z) {
 
     return cmd;
 }
+
+CncCommand newPidParamsCommand(uint32_t id, PidParams *x, PidParams *y, PidParams *z) {
+    PidParamsData data = {
+        .maParams = {*x, *y, *z},
+    };
+    union CommandData cmdData;
+    cmdData.mPidParams = data;
+    CncCommand cmd = {
+        .muId = id,
+        .mfElapsedTime = 0.0,
+        .mfLength = 0.0,
+        .meType = ePidParamsUpdate,
+        .mData = cmdData
+    };
+
+    return cmd;
+}
+
 CncCommand newPauseCommand(uint32_t id, float duration) {
     PauseCommandData data = newPauseCommandData(duration);
     union CommandData cmdData;
@@ -85,6 +112,20 @@ CncCommand newEndCommand(uint32_t id) {
 
     return cmd;
 }
+CncCommand newSetSpeedCommand(uint32_t id, float x, float y, float z) {
+    SetSpeedCommandData data = newSetSpeedCommandData(x,y,z);
+    union CommandData cmdData;
+    cmdData.mSetSpeed = data;
+    CncCommand cmd = {
+        .muId = id,
+        .mfElapsedTime = 0.0,
+        .mfLength = 0.0,
+        .meType = eSetSpeed,
+        .mData = cmdData
+    };
+
+    return cmd;
+}
 
 void updateNoneCommand(CncCommand *command, CncStatus *status, float delta) {
     
@@ -94,11 +135,27 @@ void updateMoveCommand(CncCommand *command, CncStatus *status, float delta) {
     status->maAxis[eY].mfTargetPosition = command->mData.mMove.mfY;
     status->maAxis[eZ].mfTargetPosition = command->mData.mMove.mfZ;
 }
+
+void updatePidParamsCommand(CncCommand *command, CncStatus *status, float delta) {
+    status->maAxis[0].mSpeedControl.mParams = command->mData.mPidParams.maParams[0];
+    status->maAxis[1].mSpeedControl.mParams = command->mData.mPidParams.maParams[1];
+    status->maAxis[2].mSpeedControl.mParams = command->mData.mPidParams.maParams[2];
+
+    status->maxTriggerUpdateMsg[ePidParams] = true;
+
+    command->meType = eNone;
+}
+
 void updatePauseCommand(CncCommand *command, CncStatus *status, float delta) {
 
 }
 void updateEndCommand(CncCommand *command, CncStatus *status, float delta) {
     
+}
+void updateSetSpeedCommand(CncCommand *command, CncStatus *status, float delta) {
+    status->maAxis[eX].mfTargetSpeed = command->mData.mSetSpeed.mfSpeedX;
+    status->maAxis[eY].mfTargetSpeed = command->mData.mSetSpeed.mfSpeedY;
+    status->maAxis[eZ].mfTargetSpeed = command->mData.mSetSpeed.mfSpeedZ;
 }
 
 void updateCommand(CncCommand *command, CncStatus *status, float delta) {
@@ -111,11 +168,17 @@ void updateCommand(CncCommand *command, CncStatus *status, float delta) {
     case eMove:
         updateMoveCommand(command, status, delta);
         break;
+    case ePidParamsUpdate:
+        updatePidParamsCommand(command, status, delta);
+        break;
     case ePause:
         updatePauseCommand(command, status, delta);
         break;
     case eEnd:
         updateEndCommand(command, status, delta);
+        break;
+    case eSetSpeed:
+        updateSetSpeedCommand(command, status, delta);
         break;
     }
 }
@@ -135,6 +198,12 @@ bool isPauseCommandDone(CncCommand *command, CncStatus *status) {
 bool isEndCommandDone(CncCommand *command, CncStatus *status) {
     return true;
 }
+bool isSetSpeedCommandDone(CncCommand *command, CncStatus *status) {
+    if (fabs(command->mData.mSetSpeed.mfSpeedX - status->maAxis[eX].mfSpeed)>0.0001) return false;
+    if (fabs(command->mData.mSetSpeed.mfSpeedY - status->maAxis[eY].mfSpeed)>0.0001) return false;
+    if (fabs(command->mData.mSetSpeed.mfSpeedZ - status->maAxis[eZ].mfSpeed)>0.0001) return false;
+    return true;
+}
 
 bool isCommandDone(CncCommand *command, CncStatus *status) {
     switch (command->meType)
@@ -145,11 +214,17 @@ bool isCommandDone(CncCommand *command, CncStatus *status) {
     case eMove:
         return isMoveCommandDone(command, status);
         break;
+    case ePidParamsUpdate:
+        return true;
+        break;
     case ePause:
         return isPauseCommandDone(command, status);
         break;
     case eEnd:
         return isEndCommandDone(command, status);
+        break;
+    case eSetSpeed:
+        return isSetSpeedCommandDone(command, status);
         break;
     }
 

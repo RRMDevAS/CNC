@@ -1,15 +1,20 @@
 #ifndef PID_H
 #define PID_H
 
+struct PidParams {
+    float mfPropCoeff, mfIntCoeff, mfDerCoeff;
+};
+typedef struct PidParams PidParams;
+
 struct PidControl {
     float mfTarget;
     float mfCurrent;
 
-    float mfError, mfDerError, mfIntError;
+    float mfError, mfIntError, mfDerError;
+    
+    PidParams mParams;
 
-    float mfPropCoeff, mfDerCoeff, mfIntCoeff;
-
-    float mfPropControl, mfDerControl, mfIntControl;
+    float mfPropControl, mfIntControl, mfDerControl;
     float mfControl;
 };
 typedef struct PidControl PidControl;

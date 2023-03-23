@@ -8,16 +8,16 @@ PidControl newPidControl(float propCoeff, float derCoeff, float intCoeff) {
         .mfCurrent          = 0.0f,
         
         .mfError            = 0.0f, 
-        .mfDerError         = 0.0f, 
         .mfIntError         = 0.0f,
+        .mfDerError         = 0.0f, 
 
-        .mfPropCoeff        = propCoeff, 
-        .mfDerCoeff         = derCoeff, 
-        .mfIntCoeff         = intCoeff,
+        .mParams.mfPropCoeff        = propCoeff, 
+        .mParams.mfIntCoeff         = intCoeff,
+        .mParams.mfDerCoeff         = derCoeff, 
         
         .mfPropControl      = 0.0f, 
-        .mfDerControl       = 0.0f, 
         .mfIntControl       = 0.0f,
+        .mfDerControl       = 0.0f, 
         .mfControl          = 0.0f
     };
 
@@ -28,8 +28,8 @@ void setPidTarget(PidControl* pid, float target) {
     pid->mfTarget = target;
 
     pid->mfError = 0.0f;
-    pid->mfDerError = 0.0f;
     pid->mfIntError = 0.0f;
+    pid->mfDerError = 0.0f;
 }
 
 void setPidCurrent(PidControl* pid, float current, float timeDelta) {
@@ -37,7 +37,7 @@ void setPidCurrent(PidControl* pid, float current, float timeDelta) {
     float fError = pid->mfTarget - current;
 
     if (timeDelta>0.0f) {
-        pid->mfDerError = (fError - pid->mfError) / timeDelta;
+        pid->mfDerError = fabs(fError - pid->mfError) / timeDelta;
         
         // approximate integral term error
         // reduces accumulated error by a tenth and adds new error
@@ -51,9 +51,9 @@ void setPidCurrent(PidControl* pid, float current, float timeDelta) {
 }
 
 void calculatePidControl(PidControl* pid) {
-    pid->mfPropControl = pid->mfError * pid->mfPropCoeff;
-    pid->mfDerControl = pid->mfDerError * pid->mfDerCoeff;
-    pid->mfIntControl = pid->mfIntError * pid->mfIntCoeff;
+    pid->mfPropControl = pid->mfError * pid->mParams.mfPropCoeff;
+    pid->mfIntControl = pid->mfIntError * pid->mParams.mfIntCoeff;
+    pid->mfDerControl = pid->mfDerError * pid->mParams.mfDerCoeff;
 
-    pid->mfControl = pid->mfPropControl + pid->mfDerControl + pid->mfIntControl;
+    pid->mfControl = pid->mfPropControl + pid->mfIntControl + pid->mfDerControl;
 }

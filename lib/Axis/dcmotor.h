@@ -62,7 +62,7 @@ static DCMotor newMotor(mcpwm_unit_t unitId,
     return encDcMotor;
 }
 
-void initializeMotor(DCMotor *pMotor) ;
+bool initializeMotor(DCMotor *pMotor) ;
 
 void runMotorFwd(DCMotor *pMotor, float dutyCycle);
 void runMotorBwd(DCMotor *pMotor, float dutyCycle);

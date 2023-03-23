@@ -3,6 +3,9 @@
         "chrono": "c",
         "array": "c",
         "string": "c",
-        "string_view": "c"
+        "string_view": "c",
+        "cnc_status.h": "c",
+        "mcpwm_periph.h": "c",
+        "cmath": "c"
     }
 }

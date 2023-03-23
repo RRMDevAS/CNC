@@ -6,15 +6,19 @@
 
 static const char *TAG = "AXIS";
 
-void initializeMotor(DCMotor *pMotor) {
+bool initializeMotor(DCMotor *pMotor) {
     printf("initializeMotor - initializing mcpwm gpio...\n");
     esp_err_t pwmResA = mcpwm_gpio_init(pMotor->miMCPUnit, pMotor->mePwmSignalA, pMotor->miGpioPwmA);
     if (pwmResA!=ESP_OK) {
         ESP_LOGW(TAG, "Failed to init motor A pwm");
+
+        return false;
     }
     esp_err_t pwmResB = mcpwm_gpio_init(pMotor->miMCPUnit, pMotor->mePwmSignalB, pMotor->miGpioPwmB);
     if (pwmResB!=ESP_OK) {
         ESP_LOGW(TAG, "Failed to init motor B pwm");
+
+        return false;
     }
 
     //2. initial mcpwm configuration
@@ -25,12 +29,17 @@ void initializeMotor(DCMotor *pMotor) {
     pwm_config.cmpr_b = 0;    //duty cycle of PWMxb = 0
     pwm_config.counter_mode = MCPWM_UP_COUNTER;
     pwm_config.duty_mode = MCPWM_DUTY_MODE_0;
-    esp_err_t pwmResInit = mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_0, &pwm_config);    //Configure PWM0A & PWM0B with above settings
+    esp_err_t pwmResInit = mcpwm_init(pMotor->miMCPUnit, pMotor->meTimer, &pwm_config);    //Configure PWM0A & PWM0B with above settings
     if (pwmResInit!=ESP_OK) {
         ESP_LOGW(TAG, "Failed to init mcpwm config");
+
+        return false;
     }
 
+    ESP_LOGI(TAG, "Initialization of mcpwm config done");
     pMotor->mxInitialized = true;
+
+    return true;
 }
 
 void runMotorFwd(DCMotor *pMotor, float dutyCycle) {

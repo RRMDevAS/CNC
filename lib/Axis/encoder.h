@@ -25,7 +25,7 @@ static Encoder newEncoder(pcnt_unit_t unit, gpio_num_t pinA, gpio_num_t pinB) {
 
 static void pcntOverflowHandler(void *arg);
 
-void initializeEncoder(Encoder* pEncoder);
+bool initializeEncoder(Encoder* pEncoder);
 
 int64_t getRawCount(Encoder* pEncoder);
 int64_t getCount(Encoder* pEncoder);

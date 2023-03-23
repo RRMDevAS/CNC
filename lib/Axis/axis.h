@@ -4,6 +4,8 @@
 #include "encoder.h"
 #include "dcmotor.h"
 
+#include "pid.h"
+
 typedef enum {
     eX = 0,
     eY,
@@ -29,11 +31,15 @@ struct Axis {
     DCMotor mMotor;
     Encoder mEncoder;
 
+    float mfLead;
+
     float mfPosition;
-    float mfVelocity;
+    float mfSpeed, mfMaxSpeed;
     float mfEncoderRatio;
     float mfPositionMin, mfPositionMax;
-    float mfTargetPosition;
+    float mfTargetPosition, mfTargetSpeed;
+
+    PidControl mSpeedControl;
 
     int32_t miDuty;
 
@@ -49,6 +55,8 @@ static Axis newAxis(EAxis axisId,
                     gpio_num_t gpioEncA, gpio_num_t gpioEncB) {
     Axis axis;
 
+    axis.mfLead = 2.0f;
+
     axis.meAxis = axisId;
 
     axis.mMotor = newMotor(0, axis.meAxis, gpioPwmA, gpioPwmB);
@@ -58,13 +66,20 @@ static Axis newAxis(EAxis axisId,
     axis.mMotorAxle.mfOmega = 0.f;
 
     axis.mfPosition = 0.f;
-    axis.mfVelocity = 0.f;
+    axis.mfSpeed = 0.f;
+    // max speed calculation [mm/min]
+    // max rpm 350
+    // threaded rod movement in [mm] per rotation -> 2.f
+    axis.mfMaxSpeed = 350.f * axis.mfLead;
     // full circle angle -> 2.f * 3.141592f
     // number of pulses per rotation -> 44
     // gearbox ratio -> 34.02
-    // threaded rod movement in mm per rotation -> 2.f
+    // threaded rod lead - movement in mm per rotation -> 2.f
     // axis.mfEncoderRatio = 2.f * 3.141592f / 44.f / 34.02f * 2.f / 1.f;
-    axis.mfEncoderRatio = 1.f / 44.f / 34.02f * 2.f / 1.f;
+    axis.mfEncoderRatio = 1.f / 44.f / 34.02f * axis.mfLead / 1.f;
+
+    axis.mfTargetPosition = 0.0f;
+    axis.mfTargetSpeed = 0.0f;
 
     axis.miDuty = 0;
 
@@ -78,10 +93,14 @@ static Axis newAxis(EAxis axisId,
     return axis;
 }
 
-void initializeAxis(Axis *pAxis);
+bool initializeAxis(Axis *pAxis);
+
+void setAxisLead(Axis *pAxis, float lead);
 
 void axisEncoderUpdate(Axis *pAxis, int64_t timeDelta);
 void axisMotorUpdate(Axis *pAxis);
+
+void axisSetSpeed(Axis *pAxis, float speed);
 
 void printAxis(Axis *pAxis);
 

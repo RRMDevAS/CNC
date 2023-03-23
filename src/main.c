@@ -7,18 +7,6 @@
    CONDITIONS OF ANY KIND, either express or implied.
 */
 
-#include <stdio.h>
-#include <string.h>
-#include <math.h>
-
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp_attr.h"
-#include "esp_task_wdt.h"
-
-#include "driver/mcpwm.h"
-#include "soc/mcpwm_periph.h"
-
 #include "encoder.h"
 #include "axis.h"
 #include "cnc.h"
@@ -28,20 +16,39 @@
 
 #include "command_serde.h"
 
-#define GPIO_X_PWM0A_OUT    18   //Set GPIO 15 as PWM0A
-#define GPIO_X_PWM0B_OUT    23   //Set GPIO 16 as PWM0B
-#define GPIO_X_ENC_A_IN     22
-#define GPIO_X_ENC_B_IN     21
+#include "timer_bits.h"
 
-#define GPIO_Y_PWM0A_OUT    16   //Set GPIO 15 as PWM0A
-#define GPIO_Y_PWM0B_OUT    17   //Set GPIO 16 as PWM0B
-#define GPIO_Y_ENC_A_IN     32
-#define GPIO_Y_ENC_B_IN     33
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_attr.h"
+#include "esp_task_wdt.h"
 
-#define GPIO_Z_PWM0A_OUT    25   //Set GPIO 15 as PWM0A
-#define GPIO_Z_PWM0B_OUT    26   //Set GPIO 16 as PWM0B
-#define GPIO_Z_ENC_A_IN     27
-#define GPIO_Z_ENC_B_IN     14
+#include "driver/mcpwm.h"
+#include "driver/gpio.h"
+#include "soc/mcpwm_periph.h"
+
+#include <stdio.h>
+#include <string.h>
+#include <math.h>
+
+
+// GPIO
+#define GPIO_X_PWM0A_OUT    32   //Set GPIO 32 as PWM0A
+#define GPIO_X_PWM0B_OUT    33   //Set GPIO 33 as PWM0B
+#define GPIO_X_ENC_A_IN     34
+#define GPIO_X_ENC_B_IN     35
+
+#define GPIO_Y_PWM0A_OUT    25   //Set GPIO 15 as PWM0A
+#define GPIO_Y_PWM0B_OUT    26   //Set GPIO 16 as PWM0B
+#define GPIO_Y_ENC_A_IN     27
+#define GPIO_Y_ENC_B_IN     15
+
+#define GPIO_Z_PWM0A_OUT    23   //Set GPIO 15 as PWM0A
+#define GPIO_Z_PWM0B_OUT    18   //Set GPIO 16 as PWM0B
+#define GPIO_Z_ENC_A_IN     04
+#define GPIO_Z_ENC_B_IN     21
+
+#define GPIO_ONBOARD_LED    2
 
 QueueHandle_t gCommandQueue;
 QueueHandle_t gStatusQueue;
@@ -51,7 +58,8 @@ TcpServer gTcp;
 
 Axis gAxis;
 
-const int64_t STATUS_UPDATE_RATE = 200000;
+// const int64_t STATUS_UPDATE_RATE = 500000;
+const int64_t DELAY_INIT = 20000000;
 
 static const char *TAG = "MAIN";
 
@@ -86,37 +94,76 @@ static void configCnc(Cnc *cnc) {
 
 static void taskCncControl(void *arg) {
     Cnc gCnc;
-    configCnc(&gCnc);
 
-    int64_t iMSecs=0, iOldMSecs=0, iLogAcc = 0, iDeltaMSecs=0, iMotorDir = 0;
+    CncCommand recvCmd;     // command received through TCP
+
+    int64_t iMSecs=0, iOldMSecs=0, iLogAcc = 0, iDeltaMSecs=0;   // time
     int64_t iStatusUpdate = 0;
-    int64_t iDelaySecs = 2;
-    bool xReverse = false;
+
+    int64_t iDelayInit = 0;
+    bool xInit = false;
+    
     UBaseType_t uxHighWaterMark;
+
+    TimerBits timerBts = newTimerBits();
+
+    CncStatusMsg msg;
+
     while (1)
     {
-        if (!gCnc.mStatus.maAxis[eX].mxInitialized) continue;
-        if (!gCnc.mStatus.maAxis[eY].mxInitialized) continue;
-        if (!gCnc.mStatus.maAxis[eZ].mxInitialized) continue;
-
         iMSecs = esp_timer_get_time();
         iDeltaMSecs = iMSecs - iOldMSecs;
         iOldMSecs = iMSecs;
 
-        CncCommand recvCmd;
+        updateTimerBits(&timerBts, iDeltaMSecs);
+
+        if (!xInit) {
+            iDelayInit += iDeltaMSecs;
+            if (iDelayInit>=DELAY_INIT) {
+                configCnc(&gCnc);
+                xInit = true;
+                ESP_LOGI(TAG, "CNC initialized");
+            }
+            continue;
+        }
+
+        if (!gCnc.mStatus.maAxis[eX].mxInitialized) {
+            if (timerBts.mxImpuls_5s) {
+                ESP_LOGI(TAG, "axis X not initialized");
+            }
+            // continue;
+        }
+        if (!gCnc.mStatus.maAxis[eY].mxInitialized) {
+            if (timerBts.mxImpuls_5s) {
+                ESP_LOGI(TAG, "axis Y not initialized");
+            }
+            // continue;
+        }
+        if (!gCnc.mStatus.maAxis[eZ].mxInitialized) {
+            if (timerBts.mxImpuls_5s) {
+                ESP_LOGI(TAG, "axis Z not initialized");
+            }
+            // continue;
+        }
+
         if (xQueueReceive(gCommandQueue, (void*)&recvCmd, (TickType_t)0)) {
             gCnc.mCmd = recvCmd;
         }
 
         updateCnc(&gCnc, iDeltaMSecs);
 
-        iStatusUpdate += iDeltaMSecs;
-        if (iStatusUpdate>=STATUS_UPDATE_RATE) {
-            iStatusUpdate -= STATUS_UPDATE_RATE;
-            CncStatusMsg msg = getStatusMsg(&gCnc.mStatus);
-            // msg.maAxis[eX].mfPosition = 51.0;
-            // msg.maAxis[eY].mfPosition = 22.0;
-            // msg.maAxis[eZ].mfPosition = 33.0;
+        // iStatusUpdate += iDeltaMSecs;
+        // if (iStatusUpdate>=STATUS_UPDATE_RATE) {
+        //     // ESP_LOGI(TAG, "Status update");
+        //     iStatusUpdate -= STATUS_UPDATE_RATE;
+        //     CncStatusMsg msg = getStatusMsg(&gCnc.mStatus, eStatus);
+        //     // msg.maAxis[eX].mfPosition = 51.0;
+        //     // msg.maAxis[eY].mfPosition = 22.0;
+        //     // msg.maAxis[eZ].mfPosition = 33.0;
+        //     xQueueSend(gStatusQueue, (void*)&msg, (TickType_t)0);
+        // }
+        
+        if ( getStatusMessage(&gCnc, &msg)) {
             xQueueSend(gStatusQueue, (void*)&msg, (TickType_t)0);
         }
 
@@ -126,107 +173,15 @@ static void taskCncControl(void *arg) {
         // // vTaskDelay(1000 / portTICK_RATE_MS);
 
         iLogAcc += iDeltaMSecs;
-        if (iLogAcc/1000000>=0) {
-            iLogAcc -= 1000000;
-
-            if (fabs(gAxis.mfPosition-gAxis.mfTargetPosition)<1.f) {
-            }
+        if (iLogAcc/10000000>=0) {
+            iLogAcc -= 10000000;
+            
             uxHighWaterMark = uxTaskGetStackHighWaterMark( NULL );
-            ESP_LOGI(TAG, "axis task stack size: %i", uxHighWaterMark);
+            ESP_LOGI(TAG, "axis task stack size: %i, cycle time: %i", uxHighWaterMark, gCnc.mStatus.miCycleTime);
         }
     }
 }
 
-/**
- * @brief Configure MCPWM module for brushed dc motor
- */
-static void initAxis()
-{
-
-    gAxis = newAxis(eX, GPIO_X_PWM0A_OUT, GPIO_X_PWM0B_OUT, GPIO_X_ENC_A_IN, GPIO_X_ENC_B_IN);
-    initializeAxis(&gAxis);
-
-    int64_t iMSecs=0, iOldMSecs=0, iLogAcc = 0, iDeltaMSecs=0, iMotorStartDelay = 10;
-
-    // while (1)
-    // {
-    //     // // if (fabs(gAxis.mfPosition-gAxis.mfTargetPosition)<0.1f) {
-    //     // //     vTaskDelay(1000 / portTICK_RATE_MS);
-    //     // //     if (gAxis.mfTargetPosition==0.f) {
-    //     // //         gAxis.mfTargetPosition = 10.f;
-    //     // //     } else {
-    //     // //         gAxis.mfTargetPosition = 0.f;
-    //     // //     }
-    //     // // }
-    //     // iMSecs = esp_timer_get_time();
-    //     // iDeltaMSecs = iMSecs - iOldMSecs;
-    //     // axisEncoderUpdate(&gAxis, (float)iDeltaMSecs * 0.000001f);
-    //     // iOldMSecs = iMSecs;
-    //     // axisMotorUpdate(&gAxis);
-    //     // // vTaskDelay(1000 / portTICK_RATE_MS);
-
-    //     // iLogAcc += iDeltaMSecs;
-    //     // if (iLogAcc>=1000000) {
-    //     //     printAxis(&gAxis);
-    //     //     iLogAcc -= 1000000;
-    //     //     printf("elapsed %lld\n", iMSecs);
-    //     //     // printf("encoder %lld\n", getCount(&gAxis.mEncoder) );
-    //     //     if (iMotorStartDelay<=0) {
-    //     //         if (gAxis.mfTargetPosition==0.f) {
-    //     //             gAxis.mfTargetPosition = -1000.f;
-    //     //         } else {
-    //     //             gAxis.mfTargetPosition = 0.f;
-    //     //         }
-    //     //         iMotorStartDelay = 10;
-    //     //     }
-    //     //     iMotorStartDelay--;
-    //     // }
-    //     // // vTaskDelay(1000 / portTICK_RATE_MS);
-
-    //     // // esp_task_wdt_reset();
-    // }
-    
-}
-
-static void taskAxisMotorControl(void *arg) {
-    int64_t iMSecs=0, iOldMSecs=0, iLogAcc = 0, iDeltaMSecs=0, iMotorDir = 0;
-    int64_t iDelaySecs = 2;
-    bool xReverse = false;
-    UBaseType_t uxHighWaterMark;
-    while (1)
-    {
-        if (!gAxis.mxInitialized) continue;
-
-        iMSecs = esp_timer_get_time();
-        iDeltaMSecs = iMSecs - iOldMSecs;
-        iOldMSecs = iMSecs;
-        // axisEncoderUpdate(&gAxis, (float)iDeltaMSecs * 0.000001f);
-        axisEncoderUpdate(&gAxis, iDeltaMSecs);
-        axisMotorUpdate(&gAxis);
-        // vTaskDelay(1000 / portTICK_RATE_MS);
-
-        iLogAcc += iDeltaMSecs;
-        if (iLogAcc/1000000>=0) {
-            // printAxis(&gAxis);
-            iLogAcc -= 1000000;
-
-            if (fabs(gAxis.mfPosition-gAxis.mfTargetPosition)<1.f) {
-                iMotorDir--;
-                // vTaskDelay(5000 / portTICK_RATE_MS);
-                if (iMotorDir<=0) {
-                    if (gAxis.mfTargetPosition==0.f) {
-                        gAxis.mfTargetPosition = 30.f;
-                    } else {
-                        gAxis.mfTargetPosition = 0.f;
-                    }
-                    iMotorDir = 5;
-                }
-            }
-            // uxHighWaterMark = uxTaskGetStackHighWaterMark( NULL );
-            // ESP_LOGI(TAG, "axis task stack size: %i", uxHighWaterMark);
-        }
-    }
-}
 
 static void taskNetwork(void *arg) {
 
@@ -236,13 +191,23 @@ static void taskNetwork(void *arg) {
     uint8_t abReceivedData[512];
     uint32_t iReceivedCount;
 
+    // blue led indication
+    bool xBlueLed = false;
+
+    gpio_pad_select_gpio(GPIO_ONBOARD_LED);
+    gpio_set_direction (GPIO_ONBOARD_LED,GPIO_MODE_OUTPUT);
+    gpio_set_level(GPIO_ONBOARD_LED, 0);
+
+    // wifi
     gWifi = newWifi();
-    startWifi(&gWifi, "NET", "PWD");
+    startWifi(&gWifi, "WIFI-SSID", "WIFI-PWD");
     vTaskDelay(5000 / portTICK_RATE_MS);
 
     char astrAddress[128];
 
     UBaseType_t uxHighWaterMark;
+
+    TimerBits timerBts = newTimerBits();
 
     while (1)
     {
@@ -252,15 +217,29 @@ static void taskNetwork(void *arg) {
         iOldMSecs = iMSecs;
         iLogAcc += iDeltaMSecs;
 
+        updateTimerBits(&timerBts, iDeltaMSecs);
+
+        xBlueLed = timerBts.mxTact_0_2s;
+
         if (!gWifi.mxConnected) {
-            if (iLogAcc/1000000>=0) {
-                iLogAcc -= 1000000;
+            if (iLogAcc>=5000000) {
+                iLogAcc %= 5000000;
                 ESP_LOGI(TAG, "Wifi not connected");
                 // uxHighWaterMark = uxTaskGetStackHighWaterMark( NULL );
                 // ESP_LOGI(TAG, "network task stack size: %i", uxHighWaterMark);
             }
+            // blue led
+            if (xBlueLed) {
+                gpio_set_level(GPIO_ONBOARD_LED, 1);
+            } else {
+                gpio_set_level(GPIO_ONBOARD_LED, 0);
+            }
+
+            //
             continue;
         }
+
+        xBlueLed = timerBts.mxTact_2s;
 
         switch (gTcp.meState)
         {
@@ -273,7 +252,7 @@ static void taskNetwork(void *arg) {
             break;
         case eSocketBound:
         case eListening:
-            if (iLogAcc/1000000>=0) {
+            if (iLogAcc/10000000>=0) {
                 // ESP_LOGI(TAG, "going to accept a connection");
                 acceptConnection(&gTcp);
             }
@@ -281,7 +260,7 @@ static void taskNetwork(void *arg) {
         case eConnected:
             receiveData(&gTcp);
             if (!sendData(&gTcp) && gTcp.mClient.mSendBuffer.muSize>0) {
-                ESP_LOGI(TAG, "this is not sending");
+                ESP_LOGI(TAG, "Failed to send data");
             }
             break;
         default:
@@ -290,6 +269,7 @@ static void taskNetwork(void *arg) {
         }
         pullFromBuffer(&gTcp.mClient.mReceiveBuffer, &iReceivedCount, abReceivedData);
         if (iReceivedCount>0) {
+            xBlueLed = false;
             ESP_LOGI(TAG, "Rx: %s", (const char*)abReceivedData);
             CncCommand cmd;
             if (deserializeCommand(&cmd, iReceivedCount, abReceivedData)>=0) {
@@ -305,15 +285,21 @@ static void taskNetwork(void *arg) {
             }
         }
 
-        if (iLogAcc/1000000>=0) {
-            iLogAcc -= 1000000;
+        if (iLogAcc>=1000000) {
+            iLogAcc %= 1000000;
 
-            printTcpStatus(&gTcp);
 
             iDelaySecs--;
             if (iDelaySecs<=0) {
                 iDelaySecs = 10;
+                printTcpStatus(&gTcp);
             }
+        }
+
+        if (xBlueLed) {
+            gpio_set_level(GPIO_ONBOARD_LED, 1);
+        } else {
+            gpio_set_level(GPIO_ONBOARD_LED, 0);
         }
     }
     shutdownServer(&gTcp);
@@ -321,11 +307,11 @@ static void taskNetwork(void *arg) {
 
 void app_main(void)
 {
-    printf("Testing brushed motor...\n");
     setupQueues();
-    // configCnc();
-    // xTaskCreate(axisControl, "axisControl", 4096, NULL, 2, NULL);
-    // xTaskCreate(taskAxisMotorControl, "taskAxisMotorControl", 8192, NULL, 3, NULL);
-    xTaskCreate(taskNetwork, "taskNetwork", 8192, NULL, 3, NULL);
-    xTaskCreate(taskCncControl, "taskCnc", 8192, NULL, 3, NULL);
+    
+    BaseType_t iTaskNetRes = xTaskCreatePinnedToCore(taskNetwork, "NET", 8192, NULL, 3, NULL, 0);
+    BaseType_t iTaskCncRes = xTaskCreatePinnedToCore(taskCncControl, "CNC", 8192, NULL, 3, NULL, 1);
+
+    ESP_LOGI(TAG, "Net task res: %i", iTaskNetRes);
+    ESP_LOGI(TAG, "Cnc task res: %i", iTaskCncRes);
 }

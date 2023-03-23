@@ -23,16 +23,7 @@ static void pcntOverflowHandler(void *arg)
     }
 }
 
-void initializeEncoder(Encoder* pEncoder) {
-
-	// //Set up the IO state of hte pin
-	// gpio_pad_select_gpio(pEncoder->miGpioA);
-	// gpio_pad_select_gpio(pEncoder->miGpioB);
-	// gpio_set_direction(pEncoder->miGpioA, GPIO_MODE_INPUT);
-	// gpio_set_direction(pEncoder->miGpioB, GPIO_MODE_INPUT);
-	// gpio_pulldown_en(pEncoder->miGpioA);
-	// gpio_pulldown_en(pEncoder->miGpioB);
-
+bool initializeEncoder(Encoder* pEncoder) {
 	// Set up encoder PCNT configuration
 	// channel 0
     pcnt_config_t encConfig = {
@@ -50,6 +41,7 @@ void initializeEncoder(Encoder* pEncoder) {
 	esp_err_t configRes = pcnt_unit_config(&encConfig);
 	if (configRes!=ESP_OK) {
 		ESP_LOGE(TAG, "Config failed");
+		return false;
 	}
 
 	// channel 1
@@ -82,18 +74,9 @@ void initializeEncoder(Encoder* pEncoder) {
 	} else {
     	ESP_LOGE(TAG, "Failed to install isr service");
 	}
-
-	// /* Register ISR handler and enable interrupts for PCNT unit */
-	// if(attachedInterrupt==false){
-	// 	attachedInterrupt=true;
-	// 	esp_err_t er = pcnt_isr_register(pcnt_example_intr_handler,(void *) NULL, (int)0,
-	// 			(pcnt_isr_handle_t *)&ESP32Encoder::user_isr_handle);
-	// 	if (er != ESP_OK){
-	// 		Serial.println("Encoder wrap interrupt failed");
-	// 	}
-	// }
-	// pcnt_intr_enable(unit);
 	pcnt_counter_resume(pEncoder->muUnit);
+
+	return true;
 }
 
 int64_t getRawCount(Encoder* pEncoder) {

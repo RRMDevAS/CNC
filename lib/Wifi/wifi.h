@@ -22,6 +22,9 @@ struct Wifi
     int miRetryCount;
 
     esp_netif_ip_info_t mIpInfo;
+
+    esp_event_handler_instance_t mInstanceAnyId;
+    esp_event_handler_instance_t mInstanceGotIp;
 };
 typedef struct Wifi Wifi;
 
@@ -33,6 +36,8 @@ static Wifi newWifi() {
 
     result.mxInitialized = false;
     result.mxConnected = false;
+
+    result.miRetryCount = 0;
 
     return result;
 }
